@@ -38,27 +38,32 @@ func main() {
 		panic(err)
 	}
 
-	send := func(recepient tb.Recipient) {
+	send := func(recepient tb.Recipient) (*tb.Message, error) {
 		var options []interface{}
 		if *markdown {
 			options = append(options, tb.ModeMarkdown)
 		}
 		options = append(options, tb.NoPreview)
-		bot.Send(recepient, string(greetText), options...)
+		return bot.Send(recepient, string(greetText), options...)
 	}
 
 	type State struct {
 		sentLastTime        time.Time
 		botsMessageIsLatest bool
+		prev                *tb.Message
 	}
 
 	chat2state := make(map[int64]*State)
 
 	bot.Handle("/start", func(m *tb.Message) {
+		log.Printf("/start")
 		if !m.Private() {
 			return
 		}
-		send(m.Sender)
+		_, err := send(m.Sender)
+		if err != nil {
+			log.Printf("Replying to /start failed: %v.", err)
+		}
 	})
 
 	bot.Handle(tb.OnUserJoined, func(m *tb.Message) {
@@ -84,7 +89,14 @@ func main() {
 			return
 		}
 
-		send(m.Chat)
+		if state.prev != nil {
+			bot.Delete(state.prev)
+		}
+
+		state.prev, err = send(m.Chat)
+		if err != nil {
+			log.Printf("Chat %q. Failed to send: %v.", m.Chat.Title, err)
+		}
 
 		state.sentLastTime = time.Now()
 		state.botsMessageIsLatest = true
@@ -112,5 +124,6 @@ func main() {
 	bot.Handle(tb.OnSticker, reset)
 	bot.Handle(tb.OnVoice, reset)
 
+	log.Printf("Starting bot.")
 	bot.Start()
 }
